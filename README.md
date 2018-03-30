@@ -1,0 +1,3 @@
+# SQTree
+
+SQTree data structure
