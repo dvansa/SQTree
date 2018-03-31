@@ -5,11 +5,39 @@
 #include <list>
 #include <vector>
 
+template <class Ty>
+class PoolAlloc
+{
+public:
+	PoolAlloc()
+	{
+
+	}
+
+	static void reserve(std::size_t size)
+	{
+		_used = 0;
+		_alloc.resize(size);
+	}
+	
+	static Ty * alloc(Ty& x)
+	{
+		return &(_alloc[_used++] = x);
+	}
+
+	static std::vector<Ty> _alloc;
+	static std::size_t _used;
+};
+
+
 //AABB Axis aligned rectangle
 template <typename Scalar>
 class AABB
 {
 public:
+	AABB()
+	{}
+
 	AABB(Scalar ix1, Scalar iy1, Scalar ix2, Scalar iy2) : x1(ix1), y1(iy1), x2(ix2), y2(iy2)
 	{}
 	
@@ -30,12 +58,12 @@ public:
 };
 
 //Node
-template <typename Scalar, class Object, std::size_t MAX_ITEMS = 16>
+template <typename Scalar, class Object, std::size_t MAX_ITEMS = 128>
 class Node : public AABB<Scalar>
 {
 public:
 	typedef AABB<Scalar> AABBType;
-	typedef std::pair<AABBType, Object*> ObjectListType;
+	typedef Object * ObjectListType;
 
 	//TopLeft TopRight BottomLeft BottomRight
 	enum
@@ -43,72 +71,93 @@ public:
 		TL, TR, BL, BR
 	};
 
-
-	Node(Node * parent, AABB<Scalar> rect) : _parent(parent), AABB<Scalar>(rect)
+	Node()
 	{
-		_child[0] = _child[1] = _child[2] = _child[3] = nullptr;
+
 	}
 
-	void insert(const AABBType & objrect, Object * newobj)
+	Node(Node * parent, const AABB<Scalar> & rect) : _parent(parent), AABB<Scalar>(rect)
 	{
-		Scalar halfs = (Scalar)0.5*(x2 - x1);
-		if (_objects.empty())
+		_child[TL] = _child[TR] = _child[BL] = _child[BR] = nullptr;
+		_count_objects = 0;
+	}
+
+	bool insert(const AABBType & objrect, Object * newobj)
+	{
+		//Half parent size
+		Scalar halfs = (Scalar)(0.5*(x2 - x1));
+		if (_count_objects < MAX_ITEMS)
 		{
-			_objects.push_front(ObjectListType(objrect, newobj));
+			//_objects[_count_objects++] = newobj;
+			_objects.push_back(newobj);
+			_count_objects++;
+
+			//Node full, create childs
+			if (_count_objects == MAX_ITEMS)
+			{
+				_child[TL] = new Node<Scalar, Object, MAX_ITEMS>(this, AABBType(x1, y1, x1 + halfs, y1 + halfs));
+				_child[TR] = new Node<Scalar, Object, MAX_ITEMS>(this, AABBType(x1 + halfs, y1, x2, y1 + halfs));
+				_child[BL] = new Node<Scalar, Object, MAX_ITEMS>(this, AABBType(x1, y1 + halfs, x1 + halfs, y2));
+				_child[BR] = new Node<Scalar, Object, MAX_ITEMS>(this, AABBType(x1 + halfs, y1 + halfs, x2, y2));
+
+				//_child[TL] = PoolAlloc<Node<Scalar, Object, MAX_ITEMS>>::alloc( Node<Scalar, Object, MAX_ITEMS>(this, AABBType(x1, y1, x1 + halfs, y1 + halfs)) );
+				//_child[TR] = PoolAlloc<Node<Scalar, Object, MAX_ITEMS>>::alloc( Node<Scalar, Object, MAX_ITEMS>(this, AABBType(x1 + halfs, y1, x2, y1 + halfs)) );
+				//_child[BL] = PoolAlloc<Node<Scalar, Object, MAX_ITEMS>>::alloc( Node<Scalar, Object, MAX_ITEMS>(this, AABBType(x1, y1 + halfs, x1 + halfs, y2)) );
+				//_child[BR] = PoolAlloc<Node<Scalar, Object, MAX_ITEMS>>::alloc( Node<Scalar, Object, MAX_ITEMS>(this, AABBType(x1 + halfs, y1 + halfs, x2, y2)) );
+
+			}
+
+			return true;
 		}
 		else if (AABBType(x1, y1, x1 + halfs, y1 + halfs).contains(objrect))
 		{
-			if (_child[TL] == nullptr)
-				_child[TL] = new Node<Scalar, Object, MAX_ITEMS>(this, AABBType(x1, y1, x1 + halfs, y1 + halfs));
-			_child[TL]->insert(objrect, newobj);
+			return _child[TL]->insert(objrect, newobj);
 		}
 		else if (AABBType(x1 + halfs, y1, x2, y1 + halfs).contains(objrect))
 		{
-			if (_child[TR] == nullptr)
-				_child[TR] = new Node<Scalar, Object, MAX_ITEMS>(this, AABBType(x1 + halfs, y1, x2, y1 + halfs));
-			_child[TR]->insert(objrect, newobj);
+			return _child[TR]->insert(objrect, newobj);
 		}
 		else if (AABBType(x1, y1 + halfs, x1 + halfs, y2).contains(objrect))
 		{
-			if (_child[BL] == nullptr)
-				_child[BL] = new Node<Scalar, Object, MAX_ITEMS>(this, AABBType(x1, y1 + halfs, x1 + halfs, y2));
-			_child[BL]->insert(objrect, newobj);
+			return _child[BL]->insert(objrect, newobj);
 		}
 		else if (AABBType(x1 + halfs, y1 + halfs, x2, y2).contains(objrect))
 		{
-			if (_child[BR] == nullptr)
-				_child[BR] = new Node<Scalar, Object, MAX_ITEMS>(this, AABBType(x1 + halfs, y1 + halfs, x2, y2));
-			_child[BR]->insert(objrect, newobj);
+			return _child[BR]->insert(objrect, newobj);
 		}
-		//Not contained on childs
 		else
 		{
-			_objects.push_front(ObjectListType(objrect, newobj));
+
+			//TODO : warning dropping points
+			//_objects.push_back(newobj);
+			//_count_objects++;
 		}
+
+		return false;
 	}
 
 	void search(const AABBType & query, std::vector<Object*> & found) const
 	{
 		if (intersects(query))
 		{
-			for (auto it = _objects.begin(); it != _objects.end(); ++it)
-			{
-				if (it->first.intersects(query))
-				{
-					found.push_back(it->second);
-				}
-			}
+			found.insert(found.end(),_objects.begin(), _objects.begin() + _count_objects);
 		}
 
-		for (auto i = 0; i < 4; ++i)
-			if (_child[i] != nullptr)
-				_child[i]->search(query, found);
+		if (_child[TL])
+		{
+			_child[TL]->search(query, found);
+			_child[TR]->search(query, found);
+			_child[BL]->search(query, found);
+			_child[BR]->search(query, found);
+		}
 	}
 
 	Node * _parent;
 	std::array<Node *, 4> _child;
 
-	std::list<ObjectListType > _objects;
+	std::size_t _count_objects;
+	std::vector<ObjectListType> _objects;
+	//std::vector<ObjectListType > _objects;
 };
 
 template <typename Scalar, class Object>
@@ -124,10 +173,11 @@ public:
 		_root = new NodeType(nullptr, AABBType(0,0,size,size));
 	}
 
-	void insert(const AABBType & objrect, Object * newobj)
+	bool insert(const AABBType & objrect, Object * newobj)
 	{
 		if (_root->contains(objrect))
-			_root->insert(objrect, newobj);
+			return _root->insert(objrect, newobj);
+		return false;
 	}
 
 	void search(const AABBType & query, std::vector<Object*> & found) const
