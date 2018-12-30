@@ -1,130 +1,199 @@
-#include <sqtree.hpp>
+#include <qtree/vector_qtree.hpp>
+#include <qtree/naive_qtree.hpp>
 
 #include <iostream>
 #include <string>
 #include <vector>
+#include <set>
 
 #include <timer.hpp>
 
 using namespace std;
 
-template class PoolAlloc<Node<int, int>>;
+// Performance evaluation for a QuadTree implementation
+//
+template <class QTreeType>
+void performance_qtree(const std::string & name, QTreeType & qtree, const std::vector< typename QTreeType::AABBType > & points, const std::vector< typename QTreeType::AABBType > & queries)
+{
+	cout << "Performance : " << name << endl;
+	cout << "- - - - - - - - - - - - - - - - - -" << endl;
 
-std::vector<Node<int, int>> PoolAlloc<Node<int, int>>::_alloc = std::vector<Node<int, int>>();
-std::size_t PoolAlloc<Node<int, int>>::_used = 0;
+	QTreeType::ObjectRefType default_ref_value;
+
+	TimerHigh time;
+	float elaps;
+
+	// Operation : insert
+	time.start();
+	for (const auto & p : points)
+	{
+		qtree.insert(p, default_ref_value);
+	}
+
+	elaps = time.get_elapsed_millis();
+	cout << "\t INSERT\t " << points.size() << " points\t\t" << (points.size() / elaps) << " ops/ms" << endl;
+
+	// Operation : search
+	time.start();
+
+	vector< QTreeType::ObjectRefType > q_results;
+	for (const auto & q : queries)
+	{
+		qtree.search(q, q_results);
+	}
+
+	elaps = time.get_elapsed_millis();
+	cout << "\t SEARCH\t " << queries.size() << " queries\t\t" << (queries.size() / elaps) << " ops/ms" << endl;
+
+	// Operation : remove
+	time.start();
+	const float rm_percent = 0.01f;
+	for (size_t i = 0; i < rm_percent*points.size(); ++i)
+	{
+		qtree.remove(points[i], default_ref_value);
+	}
+
+	elaps = time.get_elapsed_millis();
+	cout << "\t REMOVE\t " << rm_percent*points.size() << " points\t\t" << (rm_percent*queries.size() / elaps) << " ops/ms" << " millisec" << endl;
+
+	cout << "- - - - - - - - - - - - - - - - - -" << endl;
+	cout << endl;
+
+}
+
+
+//Unit Testing Quad Tree
+template <class QTreeType>
+void test_qtree(const string & name, QTreeType & qtree)
+{
+	cout << "Testing : " << name << endl;
+	cout << "- - - - - - - - - - - - - - - - - -" << endl;
+
+	vector< pair< AABB<int>, int> > test_set;
+
+	test_set.push_back({ AABB<int>(1, 1, 100, 100), 1 });
+	test_set.push_back({ AABB<int>(50, 50, 150, 150), 2 });
+	test_set.push_back({ AABB<int>(20, 20, 70, 70), 3 });
+	test_set.push_back({ AABB<int>(160, 160, 200, 200), 4 });
+	
+	for (auto & p : test_set)
+	{
+		qtree.insert(p.first, &(p.second) );
+	}
+
+	//Queries
+	vector< pair< AABB<int>, set<int> > > test_queries = {
+		{ AABB<int>(-1, -1, 3, 3), {1} },
+		{ AABB<int>(25, 25, 30, 30), { 1, 3 } },
+		{ AABB<int>(155, 155, 157, 157), { } },
+		{ AABB<int>(140, 140, 170, 170), { 2,4 } },
+		{ AABB<int>(0,0,200,200), { 1,2,3,4 } }
+	};
+	
+	//Evaluate search queries after insert
+	int passed_queries = 0;
+	for (const auto & tq : test_queries)
+	{
+		vector< int * > q_res;
+		qtree.search(tq.first, q_res);
+
+		set<int> resulting_set;
+		for (const auto & r : q_res)
+		{
+			resulting_set.insert(*r);
+		}
+
+		if (resulting_set == tq.second)
+			passed_queries++;
+	}
+
+	//Remove points (odds)
+	for (size_t i = 1; i < test_set.size(); i += 2)
+	{
+		qtree.remove(test_set[i].first, &test_set[i].second);
+
+		//Remove from resulting queries
+		for (auto & tq : test_queries)
+		{
+			tq.second.erase(test_set[i].second);
+		}
+	}
+
+	//Evaluate search queries after removals
+	for (const auto & tq : test_queries)
+	{
+		vector< int * > q_res;
+		qtree.search(tq.first, q_res);
+
+		set<int> resulting_set;
+		for (const auto & r : q_res)
+		{
+			resulting_set.insert(*r);
+		}
+
+		if (resulting_set == tq.second)
+			passed_queries++;
+	}
+
+	std::cout << "PASSED\t" << passed_queries << " / " << (2*test_queries.size()) << std::endl;
+	
+	cout << "- - - - - - - - - - - - - - - - - -" << endl;
+	cout << endl;
+}
 
 int main(int argc, char ** argv)
 {
-	cout << "SQTree" << endl;
-
-	cout << "Testing AABB" << endl;
-	cout << "- - - - - - - - - - - - - - - - - -" << endl;
-	AABB<int> b1(0,0,10,10);
-	AABB<int> b2(5,5,15,15);
-	AABB<int> b3(2,2, 7,7);
-	AABB<int> b4(15, 15, 20, 20);
-
-	cout << b1.intersects(b2) << " - " << b1.contains(b2) << endl;
-	cout << b1.intersects(b3) << " - " << b1.contains(b3) << endl;
-	cout << b1.intersects(b4) << " - " << b1.contains(b4) << endl;
-
-	cout << "Testing SQTree" << endl;
-	cout << "- - - - - - - - - - - - - - - - - -" << endl;
-
-	//SQTree<int, string> tree(1024);
-
-	//vector<string> objects = {"obj1","obj2", "obj3"};
-
-	//cout << "insert" << endl;
-	//tree.insert(b2, &objects[0]); cout << "insert" << endl;
-	//tree.insert(b3, &objects[1]); cout << "insert" << endl;
-	//tree.insert(b4, &objects[2]);
-
-	//vector<string *> found;
-
-	//cout << "search" << endl;
-	//tree.search(AABB<int>(8,8,20,20),found);
-
-	//cout << "Query" << endl;
-	//for (auto v : found)
-	//	cout << "\t " << *v << endl;
-
-	cout << "Benchmark SQTree" << endl;
-	cout << "- - - - - - - - - - - - - - - - - -" << endl;
-
-	PoolAlloc<SQTree<int, int>::NodeType>::reserve(1e7);
 
 	//Parameters
-	int tree_dim = 100;
-	int points = 1e6;
-	int points_size = 1;
-	int query_size = 20;
+	const int tree_dim = 1000;
+	const int num_points = 1000000;
+	const int points_size = 10;
+	const int num_queries = 1000;
+	const int query_size = 20;
 
-	//Structures
-	vector<AABB<int>> areas;
-	int value = 1;
-	vector<int *> results;
+	//Run Unit Tests
+	if (argc > 1 && string(argv[1]) == "--run_tests")
+	{
 
-	//Tree
-	SQTree<int, int> btree(tree_dim);
-	//Timer time;
-	TimerHigh time;
+		NaiveQTree<int, int*, DefaultQTreeTraits > naive_qtree(tree_dim);
+		VectorQTree<int, int*, DefaultQTreeTraits > vector_qtree(tree_dim);
 
+		//Unit Test
+		test_qtree< NaiveQTree<int, int*, DefaultQTreeTraits > >("Naive QTree", naive_qtree);
+		test_qtree< VectorQTree<int, int*, DefaultQTreeTraits > >("Vector QTree", vector_qtree);
+
+		return 0;
+	}
+
+
+	// Gen. point set
+	vector<AABB<int>> points_set(num_points);
 	
-	//Insert vec
-	time.start();
-	for (int i = 0; i < points; ++i)
+	for (int i = 0; i < num_points; ++i)
 	{
 		int x = rand() % tree_dim;
 		int y = rand() % tree_dim;
 		int size = points_size;
-		areas.push_back(AABB<int>(x, y, x + size, y + size));
+		points_set[i] = AABB<int>(x, y, x + size, y + size);
 	}
 
-	cout << "Inserted (Vector) " << points << " points in " << time.get_elapsed_millis() << " microsec" << endl;
+	// Gen. query set
+	vector<AABB<int>> queries_set(num_queries);
 
-	//Insert
-	time.start();
-	for (int i = 0; i < points; ++i)
+	for (int i = 0; i < num_queries; ++i)
 	{
 		int x = rand() % tree_dim;
 		int y = rand() % tree_dim;
-		int size = points_size;
-		btree.insert(AABB<int>(x, y, x + size, y + size), &value);
-		
+		int size = query_size;
+		queries_set[i] = AABB<int>(x, y, x + size, y + size);
 	}
 
-	cout << "Inserted " << points << " points in " << time.get_elapsed_millis() << " microsec" << endl;
+	//Performance
+	NaiveQTree<int, int*, DefaultQTreeTraits > naive_qtree(tree_dim);
+	performance_qtree< NaiveQTree<int, int*, DefaultQTreeTraits > >("Naive QTree", naive_qtree, points_set, queries_set);
 
-	
-	AABB<int> query(0,0, query_size, query_size);
+	VectorQTree<int, int*, DefaultQTreeTraits > vector_qtree(tree_dim);
+	performance_qtree< VectorQTree<int, int*, DefaultQTreeTraits > >("Vector", vector_qtree, points_set, queries_set);
 
-	//Search vector
-	time.start();
-
-
-	for (auto& a : areas)
-	{
-		if (a.intersects(query))
-			results.push_back(&value);
-	}
-
-	cout << "Found (vector) " << results.size() << " points in " << time.get_elapsed_millis() << " microsec" << endl;
-	results.clear();
-
-	//Search
-
-	results.reserve(50000);
-	time.start();
-
-	
-	btree.search(query, results);
-
-	cout << "Found " << results.size() << " points in " << time.get_elapsed_millis() << " microsec" << endl;
-
-	
-
-
-	//Vector
 	return 0;
 }

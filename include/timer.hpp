@@ -1,5 +1,5 @@
 //
-//	Basic Timer
+//	Basic Timer classes
 //
 //
 #ifndef TIMER_HPP
@@ -49,7 +49,7 @@ public:
 		QueryPerformanceCounter(&_ts);
 	}
 
-	long long get_elapsed_millis() const
+	float get_elapsed_millis() const
 	{
 		LARGE_INTEGER endts;
 		QueryPerformanceCounter(&endts);
@@ -59,7 +59,8 @@ public:
 		elapsed.QuadPart *= 1000000;
 		elapsed.QuadPart /= _freq.QuadPart;
 
-		return elapsed.QuadPart;
+
+		return 0.001f*(float)elapsed.QuadPart;
 	}
 
 
